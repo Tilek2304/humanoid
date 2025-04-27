@@ -1,0 +1,4 @@
+Adafruit_Blinka==8.56.0
+adafruit_circuitpython_motor==3.4.15
+adafruit_circuitpython_pca9685==3.4.17
+Adafruit_PCA9685==1.0.1
