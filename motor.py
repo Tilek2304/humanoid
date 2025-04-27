@@ -2,7 +2,7 @@ import time
 import signal
 import sys
 from Adafruit_PCA9685 import PCA9685
-import Adafruit_GPIO.I2C as I2C  # Добавляем необходимый импорт
+import Adafruit_GPIO.I2C as I2C
 
 class MotorController:
     def __init__(self, pca, left_forward_ch, left_backward_ch, right_forward_ch, right_backward_ch):
@@ -43,16 +43,19 @@ class MotorController:
             self.pca.set_pwm(ch, 0, 0)
 
 def signal_handler(sig, frame):
-    motor_controller.stop_motors()
+    if 'motor_controller' in globals():
+        motor_controller.stop_motors()
     sys.exit(0)
 
 if __name__ == "__main__":
+    motor_controller = None  # Инициализация переменной
+    
     try:
         # Инициализация PCA9685 с явным указанием шины
         i2c_device = I2C.get_i2c_device(address=0x40, busnum=1)
         pca = PCA9685(i2c=i2c_device)
         
-        # Настройка каналов (проверьте свои подключения!)
+        # Настройка каналов
         motor_controller = MotorController(pca, 
                                           left_forward_ch=0,
                                           left_backward_ch=1,
@@ -62,13 +65,14 @@ if __name__ == "__main__":
         signal.signal(signal.SIGINT, signal_handler)
 
         print("Starting motor test...")
-        motor_controller.move_forward(100)
+        motor_controller.move_forward(50)
         time.sleep(2)
-        motor_controller.move_backward(100)
+        motor_controller.move_backward(75)
         time.sleep(2)
 
     except Exception as e:
         print(f"Error: {str(e)}")
     finally:
-        motor_controller.stop_motors()
+        if motor_controller is not None:
+            motor_controller.stop_motors()
         print("Motors stopped")
