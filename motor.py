@@ -1,78 +1,69 @@
+# SPDX-FileCopyrightText: 2024 ChatGPT
+# SPDX-License-Identifier: MIT
+
 import time
-import signal
-import sys
-from Adafruit_PCA9685 import PCA9685
-import Adafruit_GPIO.I2C as I2C
+import board
+from adafruit_pca9685 import PCA9685
 
 class MotorController:
-    def __init__(self, pca, left_forward_ch, left_backward_ch, right_forward_ch, right_backward_ch):
+    def __init__(self, pca, left_ch_a, left_ch_b, right_ch_a, right_ch_b):
         self.pca = pca
-        self.channels = {
-            'left_forward': left_forward_ch,
-            'left_backward': left_backward_ch,
-            'right_forward': right_forward_ch,
-            'right_backward': right_backward_ch
-        }
-        self.pca.set_pwm_freq(60)
+        self.left_a = left_ch_a
+        self.left_b = left_ch_b
+        self.right_a = right_ch_a
+        self.right_b = right_ch_b
+        
+        # Настройка частоты PWM (для моторов лучше 50-100Hz)
+        self.pca.frequency = 60
 
-    def _set_motor(self, forward_ch, backward_ch, speed):
+    def _set_motor(self, ch_a, ch_b, speed):
+        # Ограничиваем скорость от -100% до 100%
         speed = max(-100, min(100, speed))
-        pwm_value = int(abs(speed) * 4095 / 100)
-
+        pwm = abs(speed) * 65535 // 100  # Преобразуем в 16-битное значение
+        
         if speed > 0:
-            self.pca.set_pwm(forward_ch, 0, pwm_value)
-            self.pca.set_pwm(backward_ch, 0, 0)
+            ch_a.duty_cycle = pwm
+            ch_b.duty_cycle = 0
         elif speed < 0:
-            self.pca.set_pwm(forward_ch, 0, 0)
-            self.pca.set_pwm(backward_ch, 0, pwm_value)
+            ch_a.duty_cycle = 0
+            ch_b.duty_cycle = pwm
         else:
-            self.pca.set_pwm(forward_ch, 0, 0)
-            self.pca.set_pwm(backward_ch, 0, 0)
+            ch_a.duty_cycle = 0
+            ch_b.duty_cycle = 0
 
     def move_forward(self, speed):
-        self._set_motor(self.channels['left_forward'], 
-                       self.channels['left_backward'], speed)
-        self._set_motor(self.channels['right_forward'], 
-                       self.channels['right_backward'], speed)
+        self._set_motor(self.left_a, self.left_b, speed)
+        self._set_motor(self.right_a, self.right_b, speed)
 
     def move_backward(self, speed):
         self.move_forward(-speed)
 
-    def stop_motors(self):
-        for ch in self.channels.values():
-            self.pca.set_pwm(ch, 0, 0)
-
-def signal_handler(sig, frame):
-    if 'motor_controller' in globals():
-        motor_controller.stop_motors()
-    sys.exit(0)
+    def stop(self):
+        for ch in [self.left_a, self.left_b, self.right_a, self.right_b]:
+            ch.duty_cycle = 0
 
 if __name__ == "__main__":
-    motor_controller = None  # Инициализация переменной
+    # Инициализация PCA9685
+    i2c = board.I2C()  # Автоматическое определение SDA/SCL
+    pca = PCA9685(i2c)
     
     try:
-        # Инициализация PCA9685 с явным указанием шины
-        i2c_device = I2C.get_i2c_device(address=0x40, busnum=1)
-        pca = PCA9685(i2c=i2c_device)
+        # Настройка каналов (пример для L298N драйвера)
+        motor_ctl = MotorController(
+            pca,
+            left_ch_a=pca.channels[1],  # IN1
+            left_ch_b=pca.channels[0],  # IN2
+            right_ch_a=pca.channels[3], # IN3
+            right_ch_b=pca.channels[2] # IN4
+        )
         
-        # Настройка каналов
-        motor_controller = MotorController(pca, 
-                                          left_forward_ch=0,
-                                          left_backward_ch=1,
-                                          right_forward_ch=2,
-                                          right_backward_ch=3)
-
-        signal.signal(signal.SIGINT, signal_handler)
-
-        print("Starting motor test...")
-        motor_controller.move_forward(50)
+        print("Motor test started...")
+        motor_ctl.move_forward(100)
         time.sleep(2)
-        motor_controller.move_backward(75)
+        motor_ctl.move_backward(100)
         time.sleep(2)
-
-    except Exception as e:
-        print(f"Error: {str(e)}")
+        
     finally:
-        if motor_controller is not None:
-            motor_controller.stop_motors()
-        print("Motors stopped")
+        motor_ctl.stop()
+        pca.deinit()
+        print("Motors stopped and PCA deinitialized")
